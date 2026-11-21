@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      MOONBIT_INSTALL_VERSION: '0.10.11+6ff76a5f9'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned MoonBit toolchain
+        run: |
+          curl -fsSL --retry 3 --max-time 120 https://cli.moonbitlang.com/install/unix.sh -o "$RUNNER_TEMP/install-moonbit.sh"
+          bash "$RUNNER_TEMP/install-moonbit.sh" "$MOONBIT_INSTALL_VERSION"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Check package and test all supported backends
+        run: |
+          moon version --all
+          moon update
+          moon check --target all --deny-warn
+          moon test --target all --deny-warn
+          moon fmt --check
+      - name: Build CLI and verify Java interoperability
+        run: |
+          moon build --target native --release --deny-warn
+          scripts/verify-interop.sh _build/native/release/build/cmd/hlog/hlog.exe
