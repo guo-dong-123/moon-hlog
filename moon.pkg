@@ -1,0 +1,7 @@
+import {
+  "moonbit-community/flate",
+  "moonbit-community/flate/zlib",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/string",
+}

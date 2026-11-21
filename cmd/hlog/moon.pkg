@@ -1,0 +1,11 @@
+import {
+  "guo-dong-123/moon-hlog" @hloglib,
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/x/fs",
+  "moonbitlang/x/sys",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
