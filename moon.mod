@@ -6,6 +6,8 @@ repository = "https://github.com/guo-dong-123/moon-hlog"
 
 license = "MIT"
 
+readme = "README.md"
+
 description = "Interoperate with HdrHistogram interval logs and compare merged latency distributions."
 
 keywords = [ "hdrhistogram", "hlog", "latency", "benchmark" ]
