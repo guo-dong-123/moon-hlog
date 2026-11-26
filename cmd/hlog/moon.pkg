@@ -2,6 +2,7 @@ import {
   "guo-dong-123/moon-hlog" @hloglib,
   "moonbitlang/core/env",
   "moonbitlang/core/string",
+  "moonbitlang/core/json",
   "moonbitlang/x/fs",
   "moonbitlang/x/sys",
 }

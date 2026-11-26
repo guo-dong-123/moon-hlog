@@ -190,26 +190,10 @@ pub fn Log::aggregate(
   self : Log,
   selection : Selection,
 ) -> Histogram? raise HlogError {
-  if selection.from is Some(x) && !finite(x) {
-    raise Invalid("window start must be finite")
-  }
-  if selection.until is Some(x) && !finite(x) {
-    raise Invalid("window end must be finite")
-  }
-  if selection.from is Some(from) &&
-    selection.until is Some(until) &&
-    from >= until {
-    raise Invalid("window start must precede end")
-  }
+  validate_selection(selection)
   let mut aggregate : Histogram? = None
   for entry in self.entries {
-    if selection.tag is Some(tag) && entry.tag != Some(tag) {
-      continue
-    }
-    if selection.from is Some(from) && entry.relative_start < from {
-      continue
-    }
-    if selection.until is Some(until) && entry.relative_start >= until {
+    if !matches_selection(entry, selection) {
       continue
     }
     aggregate = match aggregate {

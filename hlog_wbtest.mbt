@@ -160,3 +160,69 @@ test "rewrite preserves the declared peak and supports an empty tag" {
     _ => fail("tag delimiter accepted")
   }
 }
+
+///|
+test "window groups merge counts and preserve distinct tags" {
+  let layout = make_layout(1L, 1000L, 3)
+  let histogram : Histogram = {
+    layout,
+    buckets: [{ index: 40, count: 3L, }],
+    total: 3L,
+  }
+  let payload = histogram.encode()
+  let log = parse_log(
+    "#[StartTime: 0 (seconds since epoch)]\nTag=read,1.25,1,40,\{payload}\nTag=read,1.75,1,40,\{payload}\nTag=write,1.25,1,40,\{payload}\nTag=read,-0.25,1,40,\{payload}\n1.25,1,40,\{payload}",
+  )
+  let groups = log.windows(Default::default(), 1.0)
+  assert_eq(groups.length(), 4)
+  assert_eq(groups[0].tag, None)
+  assert_eq(groups[1].index, -1L)
+  assert_eq(groups[2].tag, Some("read"))
+  assert_eq(groups[2].histogram.count(), 6L)
+  assert_eq(groups[3].tag, Some("write"))
+  let selection : Selection = {
+    tag: Some("read"),
+    from: Some(1.25),
+    until: Some(1.75),
+  }
+  let selected = log.windows(selection, 1.0)
+  assert_eq(selected.length(), 1)
+  assert_eq(selected[0].histogram.count(), 3L)
+}
+
+///|
+test "window comparison retains missing groups" {
+  let layout = make_layout(1L, 1000L, 3)
+  let histogram : Histogram = {
+    layout,
+    buckets: [{ index: 10, count: 2L, }],
+    total: 2L,
+  }
+  let payload = histogram.encode()
+  let a = parse_log(
+    "#[StartTime: 0 (seconds since epoch)]\nTag=read,0,1,10,\{payload}\nTag=read,1,1,10,\{payload}",
+  )
+  let b = parse_log(
+    "#[StartTime: 0 (seconds since epoch)]\nTag=read,1,1,10,\{payload}\nTag=write,2,1,10,\{payload}",
+  )
+  let rows = a.compare_windows(b, Default::default(), 1.0)
+  assert_eq(rows.length(), 3)
+  assert_true(rows[0].baseline is Some(_))
+  assert_true(rows[0].candidate is None)
+  assert_true(rows[1].baseline is Some(_))
+  assert_true(rows[1].candidate is Some(_))
+  assert_true(rows[2].baseline is None)
+  assert_true(rows[2].candidate is Some(_))
+}
+
+///|
+test "invalid window size is rejected" {
+  let log = parse_log("")
+  try log.windows(Default::default(), 0.0) catch {
+    Invalid(message) =>
+      assert_eq(message, "window size must be finite and positive")
+    _ => fail("unexpected error")
+  } noraise {
+    _ => fail("invalid window accepted")
+  }
+}

@@ -4,6 +4,8 @@ let usage : String =
   #|  hlog summary LOG [--tag TAG] [--from SECONDS] [--until SECONDS] [--json]
   #|  hlog compare BASELINE CANDIDATE [--tag TAG] [--from SECONDS] [--until SECONDS]
   #|               [--max-p99-increase-pct PCT] [--json]
+  #|  hlog report BASELINE CANDIDATE --window SECONDS [--tag TAG] [--from SECONDS]
+  #|               [--until SECONDS] [--max-p99-increase-pct PCT] [--json]
   #|  hlog rewrite INPUT OUTPUT
   #|
   #|Window bounds use interval start time relative to each log's StartTime.
@@ -16,6 +18,7 @@ struct Options {
   mut until : Double?
   mut max_increase : Double?
   mut json : Bool
+  mut window : Double?
 }
 
 ///|
@@ -35,7 +38,7 @@ fn read_number(
 ///|
 fn read_options(
   args : ArrayView[String],
-  compare : Bool,
+  command : String,
 ) -> Options raise @hloglib.HlogError {
   let options : Options = {
     tag: None,
@@ -43,6 +46,7 @@ fn read_options(
     until: None,
     max_increase: None,
     json: false,
+    window: None,
   }
   for i = 0; i < args.length(); {
     let flag = args[i]
@@ -58,12 +62,19 @@ fn read_options(
       "--tag" => options.tag = Some(value)
       "--from" => options.from = Some(read_number(flag, value))
       "--until" => options.until = Some(read_number(flag, value))
-      "--max-p99-increase-pct" if compare => {
+      "--max-p99-increase-pct" if command != "summary" => {
         let percent = read_number(flag, value)
         if percent < 0.0 {
           raise @hloglib.Invalid("max P99 increase must be nonnegative")
         }
         options.max_increase = Some(percent)
+      }
+      "--window" if command == "report" => {
+        let seconds = read_number(flag, value)
+        if seconds <= 0.0 {
+          raise @hloglib.Invalid("window size must be positive")
+        }
+        options.window = Some(seconds)
       }
       _ =>
         raise @hloglib.Invalid("unrecognized option or invalid value: \{flag}")
@@ -175,11 +186,12 @@ fn run(args : ArrayView[String]) -> Int raise @hloglib.HlogError {
       0
     }
     ["summary", path, .. rest] => {
-      let options = read_options(rest, false)
+      let options = read_options(rest, "summary")
       println(summary(selected(path, options), options.json))
       0
     }
-    ["compare", a, b, .. rest] => compare(a, b, read_options(rest, true))
+    ["compare", a, b, .. rest] => compare(a, b, read_options(rest, "compare"))
+    ["report", a, b, .. rest] => report(a, b, read_options(rest, "report"))
     ["rewrite", input, output] => {
       let rewritten = load(input).encode()
       @fs.write_string_to_file(output, rewritten) catch {
