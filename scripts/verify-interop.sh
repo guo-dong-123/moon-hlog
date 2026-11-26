@@ -85,4 +85,45 @@ expect_exit 1 "$hlog" compare "$baseline" "$candidate" --tag read --max-p99-incr
 printf '0.25,1.000,0.012,not-base64!\n' > "$test_dir/invalid.hlog"
 expect_exit 2 "$hlog" summary "$test_dir/invalid.hlog" --json
 
-echo "HdrHistogram Java interoperability passed for generated fixtures, summaries, rewrites, and exit codes."
+expect_exit 1 "$hlog" report "$baseline" "$candidate" --window 1 --max-p99-increase-pct 5 --json
+cp "$test_dir/stdout" "$test_dir/report.json"
+python3 - "$test_dir/report.json" "$jar:$test_dir" "$baseline" "$candidate" <<'REPORT_PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+report_path, classpath, baseline, candidate = sys.argv[1:]
+report = json.loads(Path(report_path).read_text())
+assert report["window_seconds"] == 1 and report["gate_failed"] is True
+expected_keys = [("read", 0), ("read", 1), ("write", 2)]
+assert [(row["tag"], row["window_start"]) for row in report["rows"]] == expected_keys
+for row in report["rows"]:
+    assert row["window_end"] == row["window_start"] + 1
+    for key, path in (("baseline", baseline), ("candidate", candidate)):
+        expected = json.loads(subprocess.check_output(
+            ["java", "-cp", classpath, "Oracle", "summary", path, row["tag"],
+             str(row["window_start"]), str(row["window_end"])],
+            text=True,
+        ))
+        assert row[key] == expected, (row["tag"], row["window_start"], key, row[key], expected)
+assert [row["status"] for row in report["rows"]] == ["regression", "regression", "compared"]
+REPORT_PY
+expect_exit 0 "$hlog" report "$baseline" "$baseline" --window 1 --max-p99-increase-pct 0 --json
+
+# Omit the candidate write interval to verify that the gate fails on missing samples.
+awk '!/^Tag=write,/' "$candidate" > "$test_dir/missing.hlog"
+expect_exit 1 "$hlog" report "$baseline" "$test_dir/missing.hlog" --window 1 --max-p99-increase-pct 5 --json
+python3 - "$test_dir/stdout" <<'MISSING_PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+assert report["rows"][-1]["status"] == "missing_candidate_samples"
+assert report["rows"][-1]["candidate"] is None
+MISSING_PY
+expect_exit 2 "$hlog" report "$baseline" "$candidate" --window 0
+expect_exit 2 "$hlog" report "$baseline" "$candidate" --window 1 --tag absent
+expect_exit 2 "$hlog" report "$baseline" "$candidate"
+
+echo "HdrHistogram Java interoperability passed for summaries, rewrites, window reports, and exit codes."
