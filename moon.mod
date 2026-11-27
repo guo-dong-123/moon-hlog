@@ -1,6 +1,6 @@
 name = "guo-dong-123/moon-hlog"
 
-version = "0.1.0"
+version = "0.2.0"
 
 repository = "https://github.com/guo-dong-123/moon-hlog"
 

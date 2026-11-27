@@ -30,3 +30,16 @@ jobs:
         run: |
           moon build --target native --release --deny-warn
           scripts/verify-interop.sh _build/native/release/build/cmd/hlog/hlog.exe
+      - name: Verify the packaged library and installed CLI
+        run: |
+          moon package
+          scripts/verify-consumer.sh _build/publish/guo-dong-123-moon-hlog-*.zip
+      - name: Bundle the verified Linux executable
+        run: |
+          install -m 755 _build/native/release/build/cmd/hlog/hlog.exe "$RUNNER_TEMP/hlog"
+          tar -czf "$RUNNER_TEMP/moonhlog-linux-x86_64.tar.gz" -C "$RUNNER_TEMP" hlog -C "$GITHUB_WORKSPACE" LICENSE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: moonhlog-linux-x86_64
+          path: ${{ runner.temp }}/moonhlog-linux-x86_64.tar.gz
+          if-no-files-found: error

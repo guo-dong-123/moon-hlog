@@ -1,0 +1,3 @@
+import {
+  "guo-dong-123/moon-hlog" @hlog,
+}
