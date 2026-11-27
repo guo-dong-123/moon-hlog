@@ -49,6 +49,35 @@ fn number(text : StringView, field : String) -> Double raise HlogError {
 }
 
 ///|
+// Java writes timestamps with three decimal places. Keep that grid exact
+// through epoch subtraction, while retaining the precision of other inputs.
+fn exact_milliseconds(seconds : Double) -> Int64? {
+  let rounded = (seconds * 1000.0).round()
+  if rounded.abs() <= 9007199254740991.0 && rounded / 1000.0 == seconds {
+    Some(rounded.to_int64())
+  } else {
+    None
+  }
+}
+
+///|
+fn relative_seconds(
+  timestamp : Double,
+  origin : Double,
+  anchor : Double,
+) -> Double {
+  match
+    (
+      exact_milliseconds(timestamp),
+      exact_milliseconds(origin),
+      exact_milliseconds(anchor),
+    ) {
+    (Some(t), Some(o), Some(a)) => (t - (o - a)).to_double() / 1000.0
+    _ => timestamp - (origin - anchor)
+  }
+}
+
+///|
 fn comment_time(line : StringView, prefix : String) -> Double raise HlogError {
   let value = line[prefix.length():].trim()
   for field in value.split(" ") {
@@ -137,7 +166,7 @@ pub fn parse_log(text : StringView) -> Log raise HlogError {
           base = Some(anchor)
         }
         let absolute_start = timestamp + anchor
-        let relative_start = timestamp - (origin - anchor)
+        let relative_start = relative_seconds(timestamp, origin, anchor)
         if !finite(absolute_start + duration) || !finite(relative_start) {
           raise Invalid("interval time is out of range")
         }

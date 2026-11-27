@@ -226,3 +226,32 @@ test "invalid window size is rejected" {
     _ => fail("invalid window accepted")
   }
 }
+
+///|
+test "identical millisecond timestamps group together across time bases" {
+  let layout = make_layout(1L, 1000L, 3)
+  let histogram : Histogram = {
+    layout,
+    buckets: [{ index: 10, count: 2L, }],
+    total: 2L,
+  }
+  let payload = histogram.encode()
+  let direct = parse_log(
+    "#[StartTime: 1700000000.000 (seconds since epoch)]\nTag=read,0.300,0.100,10,\{payload}\nTag=read,-0.101,0.100,10,\{payload}",
+  )
+  let anchored = parse_log(
+    "#[StartTime: 1700000000.000 (seconds since epoch)]\n#[BaseTime: 1699999990.000 (seconds since epoch)]\nTag=read,10.300,0.100,10,\{payload}\nTag=read,9.899,0.100,10,\{payload}",
+  )
+  let groups = direct.compare_windows(anchored, Default::default(), 0.1)
+  assert_eq(groups.map(row => row.index), [-2L, 3L])
+  for group in groups {
+    assert_true(group.baseline is Some(_))
+    assert_true(group.candidate is Some(_))
+  }
+  let selection : Selection = {
+    tag: Some("read"),
+    from: Some(0.3),
+    until: None,
+  }
+  assert_eq(anchored.windows(selection, 0.1).length(), 1)
+}

@@ -46,6 +46,17 @@ fn compare_window(a : WindowHistogram, b : WindowHistogram) -> Int {
 }
 
 ///|
+fn window_index(start : Double, size : Double, size_ms : Int64?) -> Double {
+  if exact_milliseconds(start) is Some(ms) && size_ms is Some(step) && step > 0L {
+    let quotient = ms / step
+    let index = if ms % step < 0L { quotient - 1L } else { quotient }
+    index.to_double()
+  } else {
+    (start / size).floor()
+  }
+}
+
+///|
 /// Groups selected interval starts into [index * seconds, (index + 1) * seconds).
 /// Groups are sorted by tag and window index. Each selected interval contributes
 /// all its samples to exactly one window.
@@ -58,12 +69,13 @@ pub fn Log::windows(
   if !finite(seconds) || seconds <= 0.0 {
     raise Invalid("window size must be finite and positive")
   }
+  let size_ms = exact_milliseconds(seconds)
   let entries : Array[WindowHistogram] = []
   for entry in self.entries {
     if !matches_selection(entry, selection) {
       continue
     }
-    let index = (entry.relative_start / seconds).floor()
+    let index = window_index(entry.relative_start, seconds, size_ms)
     if !finite(index) ||
       index < -9007199254740991.0 ||
       index >= 9007199254740991.0 ||

@@ -126,4 +126,21 @@ expect_exit 2 "$hlog" report "$baseline" "$candidate" --window 0
 expect_exit 2 "$hlog" report "$baseline" "$candidate" --window 1 --tag absent
 expect_exit 2 "$hlog" report "$baseline" "$candidate"
 
+# Represent the same 0.300 s interval on either side of a decimal window boundary.
+awk '/^#|^"StartTimestamp"/ { print } /^Tag=read,10\.250,/ { sub(/10\.250,/, "10.300,"); print }' \
+    "$baseline" > "$test_dir/anchored.hlog"
+sed '/^#\[BaseTime:/d; s/Tag=read,10\.300,/Tag=read,0.300,/' \
+    "$test_dir/anchored.hlog" > "$test_dir/relative.hlog"
+expect_exit 0 "$hlog" report "$test_dir/relative.hlog" "$test_dir/anchored.hlog" \
+    --window 0.1 --max-p99-increase-pct 0 --json
+python3 - "$test_dir/stdout" <<'TIME_PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+row, = report["rows"]
+assert (row["window_start"], row["window_end"]) == (0.3, 0.4)
+assert row["status"] == "compared" and report["gate_failed"] is False
+TIME_PY
+
 echo "HdrHistogram Java interoperability passed for summaries, rewrites, window reports, and exit codes."

@@ -25,6 +25,17 @@ fn json_number(value : Double?) -> String {
 }
 
 ///|
+fn boundary(index : Int64, seconds : Double) -> Double {
+  let milliseconds = (seconds * 1000.0).round()
+  let scaled = index.to_double() * milliseconds
+  if milliseconds / 1000.0 == seconds && scaled.abs() <= 9007199254740991.0 {
+    scaled / 1000.0
+  } else {
+    index.to_double() * seconds
+  }
+}
+
+///|
 fn report(
   baseline : String,
   candidate : String,
@@ -74,8 +85,8 @@ fn report(
     if (before is None || after is None) && options.max_increase is Some(_) {
       failed = true
     }
-    let start = row.index.to_double() * seconds
-    let end = (row.index.to_double() + 1.0) * seconds
+    let start = boundary(row.index, seconds)
+    let end = boundary(row.index + 1L, seconds)
     let tag_json = match row.tag {
       Some(tag) => Json::string(tag).stringify()
       None => "null"
