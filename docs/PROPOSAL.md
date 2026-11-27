@@ -2,27 +2,25 @@
 
 ## 基本信息
 
-- **项目名称** MoonHlog（HdrHistogram 日志工具库与命令行工具）
+- **项目名称** MoonHlog（HdrHistogram 日志库与性能回归工具）
 - **参赛者 GitHub 账号** `guo-dong-123`
-- **GitHub 仓库链接** [github.com/guo-dong-123/moon-hlog](https://github.com/guo-dong-123/moon-hlog)
-- **项目方向** MoonBit 工具库、性能测试与开发者工具
+- **GitHub 仓库链接** [https://github.com/guo-dong-123/moon-hlog](https://github.com/guo-dong-123/moon-hlog)
+- **项目方向** MoonBit 工具库与性能测试
 - **是否为移植项目** 否，使用 MoonBit 独立实现
 
 ## 项目简介
 
-同一项性能测试往往会产生多个时间段或分片的延迟直方图。直接平均各段的 P99 会丢失分布信息，难以判断整次运行的延迟是否退化。MoonHlog 面向性能测试和 CI 维护者，用 MoonBit 读取 HdrHistogram `.hlog` 日志，合并所选区间的直方图计数，再计算整体分位数，从而比较基准版与候选版。
-
-项目将日志编解码和统计做成可复用库，以 CLI 提供本地文件摘要和回归比较。CI 可根据比较结果决定是否阻止候选版本进入下一阶段。
+系统压测通常按时间段或请求标签记录延迟。整体 P99 升高时，维护者需要知道慢在哪一段、哪一类请求，以及对照数据是否完整。MoonHlog 用 MoonBit 读取 HdrHistogram 日志，合并各窗口的桶计数后再算分位数。持续集成可按阈值拦截 P99 退化，并显式报告缺少样本的窗口。
 
 ## 核心功能范围
 
-- 读写 `.hlog` 区间记录、标签和时间基准，支持 V2 压缩整数直方图。
-- 按标签或相对时间窗口筛选区间，合并布局一致的直方图，汇总样本数和 P50、P95、P99、P99.9。
-- 通过 `summary` 查看摘要，使用 `compare` 比较两次运行的 P99，超过设定增幅时让 CI 失败。`rewrite` 可重新编码日志。
-- 使用 Java HdrHistogram 2.2.2 完成 8 次摘要对照和 2 次回写核验。CLI 验证通过时退出 0、超阈值时退出 1、输入错误时退出 2。
-- 在合成的 `read` 样本中，两次运行的 P50 持平，P99 从 10,007 ns 升至 180,095 ns，超过 5% 回归阈值。
+- `summary` 汇总 P50、P95、P99、P99.9，`compare` 比较两次运行，`rewrite` 回写 V2 压缩整数日志。
+- v0.2.0 新增 `report` 和公开分组 API。可同时对照各标签和相对时间窗口，输出 JSON 并用退出码指示阈值失败。
+- 合成示例的 `read` 窗口 [1, 2) 秒内，P50 保持 10,007 ns，P99 从 10,007 ns 增至 180,095 ns。相同的 0.300 秒记录在两种时间基准下归入同一窗口。
+- 四个后端各通过 13 项库测试，独立消费者各验证 2 个公开 API 场景。Java HdrHistogram 2.2.2 用于对照摘要、窗口统计和逐桶回写结果。
+- 复现与安装说明见 [评委演示](https://github.com/guo-dong-123/moon-hlog/blob/main/docs/REVIEWER_DEMO.md)。
 
 ## 移植或参考说明
 
-- MoonHlog 以 MIT 许可证发布。日志与直方图的交换格式参考 Java HdrHistogram，后者以 CC0 1.0 或 BSD-2-Clause 许可提供。[上游许可证](https://github.com/HdrHistogram/HdrHistogram/blob/master/LICENSE.txt)
-- zlib 编解码复用 `moonbit-community/flate`，命令行文件访问和进程退出使用 `moonbitlang/x`。两项依赖均采用 Apache-2.0 许可证。
+- 项目使用 MIT 许可证。交换格式参考 Java HdrHistogram，后者以 CC0 1.0 或 BSD-2-Clause 许可提供。
+- zlib 编解码依赖 `moonbit-community/flate`，CLI 文件和进程操作依赖 `moonbitlang/x`，两者采用 Apache-2.0 许可证。

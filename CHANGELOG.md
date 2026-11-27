@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 (2026-11-27)
+
+- Add tag and time-window comparison to the public API and CLI, with explicit missing-data and P99 gate outcomes.
+- Align equivalent millisecond timestamps across explicit and implicit log time bases.
+- Check window results with Java and exercise the packaged API from a separate module on four backends.
+- Verify Native CLI installation and provide a Linux release bundle from CI.
+
 ## 0.1.0 (2026-11-21)
 
 - Read and write HdrHistogram interval logs with V2 compressed integer frames.
