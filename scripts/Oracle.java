@@ -57,6 +57,18 @@ public final class Oracle {
         }
     }
 
+    private static void generateZero(Path directory) throws Exception {
+        HistogramLogWriter writer = new HistogramLogWriter(directory.resolve("zero.hlog").toFile());
+        try {
+            writer.outputLogFormatVersion();
+            writer.outputStartTime(START_MS);
+            writer.outputLegend();
+            writeInterval(writer, "read", 0.25, 1000, 0, 0, 0);
+        } finally {
+            writer.close();
+        }
+    }
+
     private static Histogram asIntegerHistogram(EncodableHistogram interval) {
         if (interval instanceof Histogram) {
             return (Histogram) interval;
@@ -65,16 +77,25 @@ public final class Oracle {
     }
 
     private static void summary(File file, String tag, double from, double until) throws Exception {
-        Histogram aggregate = new Histogram(SIGNIFICANT_DIGITS);
+        Histogram aggregate = null;
         try (HistogramLogReader reader = new HistogramLogReader(file)) {
             EncodableHistogram interval;
             while ((interval = reader.nextIntervalHistogram()) != null) {
                 double relativeStart = interval.getStartTimeStamp() / 1000.0 - reader.getStartTimeSec();
                 if ((tag == null || Objects.equals(tag, interval.getTag()))
                         && relativeStart >= from && relativeStart < until) {
-                    aggregate.add(asIntegerHistogram(interval));
+                    Histogram histogram = asIntegerHistogram(interval);
+                    if (aggregate == null) {
+                        // Preserve the producer's precision and lowest discernible value.
+                        aggregate = histogram.copy();
+                    } else {
+                        aggregate.add(histogram);
+                    }
                 }
             }
+        }
+        if (aggregate == null) {
+            aggregate = newHistogram();
         }
         System.out.printf(
                 "{\"samples\":%d,\"p50\":%d,\"p95\":%d,\"p99\":%d,\"p999\":%d}%n",
@@ -107,6 +128,7 @@ public final class Oracle {
                 Path directory = Path.of(args[1]);
                 generate(directory, false);
                 generate(directory, true);
+                generateZero(directory);
                 break;
             case "summary":
                 summary(new File(args[1]), args.length > 2 ? args[2] : null,

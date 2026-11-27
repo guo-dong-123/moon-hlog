@@ -18,9 +18,22 @@ pub fn missing_windows(
   baseline : StringView,
   candidate : StringView,
 ) -> Int raise @hlog.HlogError {
-  let rows = @hlog.parse_log(baseline).compare_windows(
-    @hlog.parse_log(candidate), Default::default(), 1.0,
-  )
+  let selection : @hlog.Selection = Default::default()
+  let baseline_windows = @hlog.WindowAccumulator(selection, 1.0)
+  let candidate_windows = @hlog.WindowAccumulator(selection, 1.0)
+  let baseline_parser = @hlog.LogParser(selection=selection)
+  let candidate_parser = @hlog.LogParser(selection=selection)
+  for line in baseline.split("\n") {
+    if baseline_parser.push(line) is Some(interval) {
+      baseline_windows.add(interval)
+    }
+  }
+  for line in candidate.split("\n") {
+    if candidate_parser.push(line) is Some(interval) {
+      candidate_windows.add(interval)
+    }
+  }
+  let rows = baseline_windows.compare(candidate_windows)
   let mut missing = 0
   for row in rows {
     if row.baseline is None || row.candidate is None {

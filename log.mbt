@@ -92,7 +92,7 @@ fn comment_time(line : StringView, prefix : String) -> Double raise HlogError {
 ///|
 fn parse_row(
   line : StringView,
-) -> (String?, Double, Double, String, Histogram) raise HlogError {
+) -> (String?, Double, Double, String, StringView) raise HlogError {
   let fields = line.split(",").collect()
   let tagged = fields.length() > 0 && fields[0].has_prefix("Tag=")
   let offset = if tagged { 1 } else { 0 }
@@ -115,78 +115,149 @@ fn parse_row(
   if duration < 0.0 || peak < 0.0 {
     raise Invalid("negative duration or peak")
   }
-  (
-    tag,
-    timestamp,
-    duration,
-    peak_text.to_owned(),
-    decode_histogram(fields[offset + 3].trim()),
-  )
+  (tag, timestamp, duration, peak_text.to_owned(), fields[offset + 3].trim())
+}
+
+///|
+/// Incremental parser for interval logs. The parser owns the time origin and line counter.
+pub struct LogParser {
+  priv selection : Selection
+  priv selected_only : Bool
+  priv mut start : Double?
+  priv mut base : Double?
+  priv mut saw_interval : Bool
+  priv mut line_number : Int
+  priv mut checked : Int64
+  priv mut skipped : Int64
+}
+
+///|
+/// Creates an incremental parser. Rows outside the selection are validated
+/// unless selected_only explicitly permits skipping their compressed payloads.
+pub fn LogParser::LogParser(
+  selection? : Selection = Default::default(),
+  selected_only? : Bool = false,
+) -> LogParser raise HlogError {
+  validate_selection(selection)
+  {
+    selection,
+    selected_only,
+    start: None,
+    base: None,
+    saw_interval: false,
+    line_number: 0,
+    checked: 0L,
+    skipped: 0L,
+  }
+}
+
+///|
+/// Number of successfully decoded compressed payloads.
+pub fn LogParser::checked_payloads(self : LogParser) -> Int64 {
+  self.checked
+}
+
+///|
+/// Number of compressed payloads skipped by an explicitly selective read.
+pub fn LogParser::skipped_payloads(self : LogParser) -> Int64 {
+  self.skipped
+}
+
+///|
+/// Processes one complete input line, yielding a selected interval if present.
+pub fn LogParser::push(
+  self : LogParser,
+  raw : StringView,
+) -> Interval? raise HlogError {
+  self.line_number += 1
+  let line = raw.trim()
+  try {
+    if line.length() == 0 ||
+      line.has_prefix("\"StartTimestamp\"") ||
+      line.has_prefix("StartTimestamp,") {
+      return None
+    }
+    if line.has_prefix("#[StartTime:") {
+      if self.saw_interval {
+        raise Invalid("StartTime must precede data")
+      }
+      self.start = Some(comment_time(line, "#[StartTime:"))
+      return None
+    }
+    if line.has_prefix("#[BaseTime:") {
+      if self.saw_interval {
+        raise Invalid("BaseTime must precede data")
+      }
+      self.base = Some(comment_time(line, "#[BaseTime:"))
+      return None
+    }
+    if line.has_prefix("#") {
+      return None
+    }
+    let (tag, timestamp, duration, peak_text, payload) = parse_row(line)
+    self.saw_interval = true
+    let origin = self.start.unwrap_or(timestamp)
+    if self.start is None {
+      self.start = Some(origin)
+    }
+    let anchor = self.base.unwrap_or(
+      if timestamp < origin - 31536000.0 {
+        origin
+      } else {
+        0.0
+      },
+    )
+    if self.base is None {
+      self.base = Some(anchor)
+    }
+    let absolute_start = timestamp + anchor
+    let relative_start = relative_seconds(timestamp, origin, anchor)
+    if !finite(absolute_start + duration) || !finite(relative_start) {
+      raise Invalid("interval time is out of range")
+    }
+    let selected = matches_coordinates(tag, relative_start, self.selection)
+    if !selected && self.selected_only {
+      self.skipped += 1L
+      return None
+    }
+    let histogram = decode_histogram(payload)
+    self.checked += 1L
+    if selected {
+      Some({
+        tag,
+        timestamp,
+        peak_text,
+        relative_start,
+        absolute_start,
+        duration,
+        histogram,
+      })
+    } else {
+      None
+    }
+  } catch {
+    Invalid(reason) => raise Invalid("line \{self.line_number}: \{reason}")
+    Unsupported(reason) =>
+      raise Unsupported("line \{self.line_number}: \{reason}")
+    Incompatible(reason) => raise Incompatible(reason)
+  }
 }
 
 ///|
 /// Reads an HdrHistogram interval log with V2 compressed integer payloads.
 pub fn parse_log(text : StringView) -> Log raise HlogError {
+  let parser = LogParser()
   let entries : Array[Interval] = []
-  let mut start : Double? = None
-  let mut base : Double? = None
-  let mut line_number = 0
   for raw in text.split("\n") {
-    line_number += 1
-    let line = raw.trim()
-    try {
-      if line.length() == 0 ||
-        line.has_prefix("\"StartTimestamp\"") ||
-        line.has_prefix("StartTimestamp,") {
-        ()
-      } else if line.has_prefix("#[StartTime:") {
-        if entries.length() != 0 {
-          raise Invalid("StartTime must precede data")
-        }
-        start = Some(comment_time(line, "#[StartTime:"))
-      } else if line.has_prefix("#[BaseTime:") {
-        if entries.length() != 0 {
-          raise Invalid("BaseTime must precede data")
-        }
-        base = Some(comment_time(line, "#[BaseTime:"))
-      } else if !line.has_prefix("#") {
-        let (tag, timestamp, duration, peak_text, histogram) = parse_row(line)
-        let origin = start.unwrap_or(timestamp)
-        if start is None {
-          start = Some(origin)
-        }
-        let anchor = base.unwrap_or(
-          if timestamp < origin - 31536000.0 {
-            origin
-          } else {
-            0.0
-          },
-        )
-        if base is None {
-          base = Some(anchor)
-        }
-        let absolute_start = timestamp + anchor
-        let relative_start = relative_seconds(timestamp, origin, anchor)
-        if !finite(absolute_start + duration) || !finite(relative_start) {
-          raise Invalid("interval time is out of range")
-        }
-        entries.push({
-          tag,
-          timestamp,
-          peak_text,
-          relative_start,
-          absolute_start,
-          duration,
-          histogram,
-        })
-      }
-    } catch {
-      Invalid(reason) => raise Invalid("line \{line_number}: \{reason}")
-      Unsupported(reason) => raise Unsupported("line \{line_number}: \{reason}")
-      Incompatible(reason) => raise Incompatible(reason)
+    if parser.push(raw) is Some(entry) {
+      entries.push(entry)
     }
   }
-  { entries, start_time: start.unwrap_or(0.0), base_time: base.unwrap_or(0.0), }
+  {
+    entries,
+    start_time: parser.start.unwrap_or(0.0),
+    base_time: parser.base.unwrap_or(0.0),
+  }
 }
 
 ///|

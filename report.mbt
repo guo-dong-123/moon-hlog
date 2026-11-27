@@ -7,17 +7,26 @@ pub struct WindowHistogram {
 }
 
 ///|
-fn matches_selection(entry : Interval, selection : Selection) -> Bool {
-  if selection.tag is Some(tag) && entry.tag != Some(tag) {
+fn matches_coordinates(
+  entry_tag : String?,
+  relative_start : Double,
+  selection : Selection,
+) -> Bool {
+  if selection.tag is Some(tag) && entry_tag != Some(tag) {
     return false
   }
-  if selection.from is Some(from) && entry.relative_start < from {
+  if selection.from is Some(from) && relative_start < from {
     return false
   }
-  if selection.until is Some(until) && entry.relative_start >= until {
+  if selection.until is Some(until) && relative_start >= until {
     return false
   }
   true
+}
+
+///|
+fn matches_selection(entry : Interval, selection : Selection) -> Bool {
+  matches_coordinates(entry.tag, entry.relative_start, selection)
 }
 
 ///|
@@ -57,6 +66,67 @@ fn window_index(start : Double, size : Double, size_ms : Int64?) -> Double {
 }
 
 ///|
+/// Accumulates one merged histogram per tag and relative-time window.
+pub struct WindowAccumulator {
+  priv selection : Selection
+  priv seconds : Double
+  priv size_ms : Int64?
+  priv groups : Map[(String?, Int64), Histogram]
+}
+
+///|
+/// Creates a window accumulator with validated bounds.
+pub fn WindowAccumulator::WindowAccumulator(
+  selection : Selection,
+  seconds : Double,
+) -> WindowAccumulator raise HlogError {
+  validate_selection(selection)
+  if !finite(seconds) || seconds <= 0.0 {
+    raise Invalid("window size must be finite and positive")
+  }
+  { selection, seconds, size_ms: exact_milliseconds(seconds), groups: {}, }
+}
+
+///|
+/// Merges a selected interval into its corresponding window.
+pub fn WindowAccumulator::add(
+  self : WindowAccumulator,
+  entry : Interval,
+) -> Unit raise HlogError {
+  if !matches_selection(entry, self.selection) {
+    return
+  }
+  let index = window_index(entry.relative_start, self.seconds, self.size_ms)
+  if !finite(index) ||
+    index < -9007199254740991.0 ||
+    index >= 9007199254740991.0 ||
+    !finite(index * self.seconds) ||
+    !finite((index + 1.0) * self.seconds) {
+    raise Invalid("window index or boundary is out of range")
+  }
+  let key = (entry.tag, index.to_int64())
+  let merged = match self.groups.get(key) {
+    Some(existing) => existing.merge(entry.histogram)
+    None => entry.histogram
+  }
+  self.groups[key] = merged
+}
+
+///|
+/// Returns the merged histograms in tag and window order.
+pub fn WindowAccumulator::windows(
+  self : WindowAccumulator,
+) -> Array[WindowHistogram] {
+  let rows : Array[WindowHistogram] = []
+  for item in self.groups {
+    let ((tag, index), histogram) = item
+    rows.push({ tag, index, histogram, })
+  }
+  rows.sort_by(compare_window)
+  rows
+}
+
+///|
 /// Groups selected interval starts into [index * seconds, (index + 1) * seconds).
 /// Groups are sorted by tag and window index. Each selected interval contributes
 /// all its samples to exactly one window.
@@ -65,42 +135,11 @@ pub fn Log::windows(
   selection : Selection,
   seconds : Double,
 ) -> Array[WindowHistogram] raise HlogError {
-  validate_selection(selection)
-  if !finite(seconds) || seconds <= 0.0 {
-    raise Invalid("window size must be finite and positive")
-  }
-  let size_ms = exact_milliseconds(seconds)
-  let entries : Array[WindowHistogram] = []
+  let accumulator = WindowAccumulator(selection, seconds)
   for entry in self.entries {
-    if !matches_selection(entry, selection) {
-      continue
-    }
-    let index = window_index(entry.relative_start, seconds, size_ms)
-    if !finite(index) ||
-      index < -9007199254740991.0 ||
-      index >= 9007199254740991.0 ||
-      !finite(index * seconds) ||
-      !finite((index + 1.0) * seconds) {
-      raise Invalid("window index or boundary is out of range")
-    }
-    entries.push({
-      tag: entry.tag,
-      index: index.to_int64(),
-      histogram: entry.histogram,
-    })
+    accumulator.add(entry)
   }
-  entries.sort_by(compare_window)
-  let result : Array[WindowHistogram] = []
-  for entry in entries {
-    let last = result.length() - 1
-    if last >= 0 && compare_window(result[last], entry) == 0 {
-      let histogram = result[last].histogram.merge(entry.histogram)
-      result[last] = { tag: entry.tag, index: entry.index, histogram, }
-    } else {
-      result.push(entry)
-    }
-  }
-  result
+  accumulator.windows()
 }
 
 ///|
@@ -120,8 +159,32 @@ pub fn Log::compare_windows(
   selection : Selection,
   seconds : Double,
 ) -> Array[WindowComparison] raise HlogError {
-  let baseline = self.windows(selection, seconds)
-  let candidate = other.windows(selection, seconds)
+  join_windows(
+    self.windows(selection, seconds),
+    other.windows(selection, seconds),
+  )
+}
+
+///|
+/// Compares the sorted results of two accumulators with the same window size.
+pub fn WindowAccumulator::compare(
+  self : WindowAccumulator,
+  other : WindowAccumulator,
+) -> Array[WindowComparison] raise HlogError {
+  if self.seconds != other.seconds ||
+    self.selection.tag != other.selection.tag ||
+    self.selection.from != other.selection.from ||
+    self.selection.until != other.selection.until {
+    raise Incompatible("window accumulators have different selections or sizes")
+  }
+  join_windows(self.windows(), other.windows())
+}
+
+///|
+fn join_windows(
+  baseline : Array[WindowHistogram],
+  candidate : Array[WindowHistogram],
+) -> Array[WindowComparison] {
   let result : Array[WindowComparison] = []
   let mut left = 0
   let mut right = 0

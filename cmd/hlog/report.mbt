@@ -1,30 +1,4 @@
 ///|
-fn histogram_json(histogram : @hloglib.Histogram?) -> String {
-  match histogram {
-    Some(value) if value.count() > 0L => summary(value, true)
-    Some(value) =>
-      "{\"samples\":\{value.count()},\"p50\":null,\"p95\":null,\"p99\":null,\"p999\":null}"
-    None => "null"
-  }
-}
-
-///|
-fn p99(histogram : @hloglib.Histogram?) -> Int64? {
-  match histogram {
-    Some(value) => value.percentile(9900)
-    None => None
-  }
-}
-
-///|
-fn json_number(value : Double?) -> String {
-  match value {
-    Some(n) => n.to_string()
-    None => "null"
-  }
-}
-
-///|
 fn boundary(index : Int64, seconds : Double) -> Double {
   let milliseconds = (seconds * 1000.0).round()
   let scaled = index.to_double() * milliseconds
@@ -36,7 +10,7 @@ fn boundary(index : Int64, seconds : Double) -> Double {
 }
 
 ///|
-fn report(
+async fn report(
   baseline : String,
   candidate : String,
   options : Options,
@@ -44,46 +18,35 @@ fn report(
   guard options.window is Some(seconds) else {
     raise @hloglib.Invalid("report requires --window SECONDS")
   }
-  let selection : @hloglib.Selection = {
-    tag: options.tag,
-    from: options.from,
-    until: options.until,
+  if units_mismatch(options) {
+    report_units_mismatch(options)
+    return 2
   }
-  let rows = load(baseline).compare_windows(load(candidate), selection, seconds)
-  if rows.is_empty() {
+  let (baseline_windows, baseline_stats) = read_windows(
+    baseline, options, seconds,
+  )
+  let (candidate_windows, candidate_stats) = read_windows(
+    candidate, options, seconds,
+  )
+  let rows = baseline_windows.compare(candidate_windows)
+  if rows.is_empty() && options.min_samples is None {
     raise @hloglib.Invalid("no intervals match the selection")
   }
   let json_rows : Array[String] = []
-  let mut failed = false
+  let mut outcome : GateOutcome = if rows.is_empty() {
+    InsufficientData
+  } else {
+    NotEvaluated
+  }
   for row in rows {
-    let before = p99(row.baseline)
-    let after = p99(row.candidate)
-    let (change, status) = match (before, after) {
-      (Some(a), Some(b)) => {
-        let change = if a == 0L {
-          None
-        } else {
-          Some((b - a).to_double() * 100.0 / a.to_double())
-        }
-        let exceeds = match options.max_increase {
-          None => false
-          Some(limit) =>
-            match change {
-              None => b > 0L
-              Some(percent) => percent > limit
-            }
-        }
-        if exceeds {
-          failed = true
-        }
-        (change, if exceeds { "regression" } else { "compared" })
-      }
-      (None, None) => (None, "no_samples")
-      (None, Some(_)) => (None, "missing_baseline_samples")
-      (Some(_), None) => (None, "missing_candidate_samples")
+    let decision = evaluate_gate(row.baseline, row.candidate, options)
+    if decision.outcome > outcome {
+      outcome = decision.outcome
     }
-    if (before is None || after is None) && options.max_increase is Some(_) {
-      failed = true
+    let status = match decision.outcome {
+      NotEvaluated | Pass => "compared"
+      Regression => "regression"
+      InsufficientData => decision.reason
     }
     let start = boundary(row.index, seconds)
     let end = boundary(row.index + 1L, seconds)
@@ -94,16 +57,17 @@ fn report(
     if options.json {
       let base = histogram_json(row.baseline)
       let next = histogram_json(row.candidate)
-      let percent = json_number(change)
+      let percent = json_number(decision.change)
+      let row_outcome = decision.outcome.label()
       json_rows.push(
-        "{\"tag\":\{tag_json},\"window_start\":\{start},\"window_end\":\{end},\"baseline\":\{base},\"candidate\":\{next},\"p99_increase_pct\":\{percent},\"status\":\"\{status}\"}",
+        "{\"tag\":\{tag_json},\"window_start\":\{start},\"window_end\":\{end},\"baseline\":\{base},\"candidate\":\{next},\"p99_increase_pct\":\{percent},\"status\":\"\{status}\",\"outcome\":\"\{row_outcome}\",\"reason\":\"\{decision.reason}\"}",
       )
     } else {
-      let base = match before {
+      let base = match decision.baseline_p99 {
         Some(value) => value.to_string()
         None => "-"
       }
-      let next = match after {
+      let next = match decision.candidate_p99 {
         Some(value) => value.to_string()
         None => "-"
       }
@@ -112,11 +76,36 @@ fn report(
       )
     }
   }
+  let failed = outcome.blocks(options)
+  let reason = match outcome {
+    NotEvaluated => "no_gate_configured"
+    Pass => "thresholds_met"
+    Regression => "window_regression"
+    InsufficientData if rows.is_empty() => "no_matching_intervals"
+    InsufficientData => "window_insufficient_data"
+  }
   if options.json {
+    let report_outcome = outcome.label()
+    let minimum = minimum_json(options)
     let rows_json = json_rows.join(",")
+    let units = units_json_suffix(options)
+    let validation = if options.selected_only {
+      ",\"validation\":\{comparison_validation_json(baseline_stats, candidate_stats)}"
+    } else {
+      ""
+    }
     println(
-      "{\"window_seconds\":\{seconds},\"rows\":[\{rows_json}],\"gate_failed\":\{failed}}",
+      "{\"window_seconds\":\{seconds},\"rows\":[\{rows_json}],\"gate_failed\":\{failed},\"min_samples\":\{minimum},\"outcome\":\"\{report_outcome}\",\"reason\":\"\{reason}\"\{units}\{validation}}",
     )
+  } else if rows.is_empty() {
+    println("Insufficient data: \{reason}")
+  }
+  if !options.json {
+    explain_units(options)
+  }
+  if options.selected_only && !options.json {
+    explain_validation(baseline, baseline_stats)
+    explain_validation(candidate, candidate_stats)
   }
   if failed {
     1

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-11-27)
+
+- Add optional sample-count gates to `compare` and `report`, with machine-readable causes for regressions and insufficient evidence.
+- Verify a real jHiccup capture against the Java reference and provide a GitHub Actions example with JSON artifacts and a job summary.
+- Accept explicit producer units and report incompatible declarations before evaluation.
+- Read and aggregate interval logs incrementally, with opt-in selective payload validation and a reproducible memory benchmark.
+
 ## 0.2.0 (2026-11-27)
 
 - Add tag and time-window comparison to the public API and CLI, with explicit missing-data and P99 gate outcomes.

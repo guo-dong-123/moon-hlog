@@ -1,6 +1,6 @@
 name = "guo-dong-123/moon-hlog"
 
-version = "0.2.0"
+version = "0.3.0"
 
 repository = "https://github.com/guo-dong-123/moon-hlog"
 
@@ -15,4 +15,5 @@ keywords = [ "hdrhistogram", "hlog", "latency", "benchmark" ]
 import {
   "moonbit-community/flate@0.5.0",
   "moonbitlang/x@0.5.4",
+  "moonbitlang/async@0.20.1",
 }

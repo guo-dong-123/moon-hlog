@@ -1,0 +1,57 @@
+name: MoonHlog latency gate
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Select a fixture to exercise the real gate exit status
+        type: choice
+        required: true
+        default: pass
+        options:
+          - pass
+          - regression
+          - insufficient_data
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    env:
+      MOONBIT_INSTALL_VERSION: '0.10.11+6ff76a5f9'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install MoonBit
+        run: |
+          curl -fsSL --retry 3 --max-time 120 https://cli.moonbitlang.com/install/unix.sh -o "$RUNNER_TEMP/install-moonbit.sh"
+          bash "$RUNNER_TEMP/install-moonbit.sh" "$MOONBIT_INSTALL_VERSION"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Build MoonHlog
+        run: |
+          moon update
+          moon build --target native --release --deny-warn
+      - name: Gate on P99 and sample count
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+        run: |
+          baseline=tests/fixtures/baseline.hlog
+          candidate=tests/fixtures/candidate.hlog
+          tag=read
+          case "$SCENARIO" in
+            pass) candidate="$baseline" ;;
+            regression) ;;
+            insufficient_data) tag=write ;;
+            *) exit 2 ;;
+          esac
+          python3 examples/github-actions/run-gate.py \
+            ./_build/native/release/build/cmd/hlog/hlog.exe "$RUNNER_TEMP/moonhlog-report.json" \
+            "$baseline" "$candidate" --window 1 --tag "$tag" \
+            --min-samples 100 --max-p99-increase-pct 5 --baseline-unit ns --candidate-unit ns
+      - name: Upload the full JSON report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: moonhlog-report
+          path: ${{ runner.temp }}/moonhlog-report.json
+          if-no-files-found: ignore

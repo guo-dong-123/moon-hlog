@@ -255,3 +255,47 @@ test "identical millisecond timestamps group together across time bases" {
   }
   assert_eq(anchored.windows(selection, 0.1).length(), 1)
 }
+
+///|
+test "incremental parser preserves origin even if initial interval is skipped" {
+  let layout = make_layout(1L, 1000L, 3)
+  let histogram : Histogram = {
+    layout,
+    buckets: [{ index: 10, count: 2L, }],
+    total: 2L,
+  }
+  let selection : Selection = {
+    tag: Some("read"),
+    from: Some(1.0),
+    until: Some(2.0),
+  }
+  let parser = LogParser(selection~, selected_only=true)
+  assert_true(parser.push("Tag=write,10,1,10,?") is None)
+  guard parser.push("Tag=read,11,1,10,\{histogram.encode()}"[:]) is Some(entry) else {
+    fail("selected interval missing")
+  }
+  assert_eq(entry.relative_start, 1.0)
+  assert_eq(entry.histogram.count(), 2L)
+  assert_eq(parser.checked_payloads(), 1L)
+  assert_eq(parser.skipped_payloads(), 1L)
+  try parser.push("#[StartTime: 22 (seconds since epoch)]") catch {
+    Invalid(message) =>
+      assert_eq(message, "line 3: StartTime must precede data")
+    _ => fail("unexpected error")
+  } noraise {
+    _ => fail("accepted a change of origin after an interval")
+  }
+}
+
+///|
+test "strict incremental parser validates unselected payloads" {
+  let selection : Selection = { tag: Some("read"), from: None, until: None, }
+  let parser = LogParser(selection~)
+  try parser.push("Tag=write,0,1,10,?") catch {
+    Invalid(message) =>
+      assert_eq(message, "line 1: invalid base64 histogram payload")
+    _ => fail("unexpected error")
+  } noraise {
+    _ => fail("strict parser skipped a malformed payload")
+  }
+}
