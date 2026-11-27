@@ -6,7 +6,7 @@ The sample logs each have 1,100 `read` measurements. P50 stays at 10,007 ns whil
 
 ## Install the CLI
 
-Download the archive for Linux x86-64 or macOS Apple Silicon from [Release v0.3.0](https://github.com/guo-dong-123/moon-hlog/releases/tag/v0.3.0). Extract it and run `./hlog --help`. The release includes sample logs and checksums. On a machine with the supported MoonBit toolchain, you can also install the CLI from a checkout with `moon install ./cmd/hlog`.
+Download the archive for Linux x86-64 or macOS Apple Silicon from [Release v0.3.0](https://github.com/guo-dong-123/moon-hlog/releases/tag/v0.3.0). Extract it and run `./hlog --help`. The release includes sample logs and checksums. On a machine with the supported MoonBit toolchain, install the published CLI with `moon install guo-dong-123/moon-hlog/cmd/hlog@0.3.0`, or build it from a checkout with `moon install ./cmd/hlog`.
 
 ## Run the example
 
@@ -65,7 +65,7 @@ The library exposes `LogParser` for incremental input and `WindowAccumulator` fo
 
 ## Use the library
 
-The root package is `guo-dong-123/moon-hlog`. The repository includes an independent [consumer module](examples/consumer). Run it against this checkout with a temporary workspace:
+The root package is [`guo-dong-123/moon-hlog`](https://mooncakes.io/docs/guo-dong-123/moon-hlog@0.3.0). In an existing MoonBit module, run `moon add guo-dong-123/moon-hlog@0.3.0` and import it in `moon.pkg` with the alias `@hlog`. The repository includes an independent [consumer module](examples/consumer). Run it against this checkout with a temporary workspace:
 
 ```sh
 moon package

@@ -47,4 +47,4 @@ moon package
 scripts/verify-consumer.sh _build/publish/guo-dong-123-moon-hlog-0.3.0.zip
 ```
 
-消费测试解压构建包、通过独立模块导入公开 API，并安装和运行 CLI。公共注册表发布后，在空项目用 `moon add guo-dong-123/moon-hlog@<发布版本>` 安装，再跑同样的公开 API 测试。[MoonBit 包管理文档](https://docs.moonbitlang.com/en/latest/toolchain/moon/package-manage-tour.html)
+消费测试解压构建包、通过独立模块导入公开 API，并安装和运行 CLI。v0.3.0 已发布到 [Mooncakes](https://mooncakes.io/docs/guo-dong-123/moon-hlog@0.3.0)。2026-11-27 已在独立模块执行 `moon add guo-dong-123/moon-hlog@0.3.0` 并验证四个后端各 2 项消费者测试，通过 `moon install guo-dong-123/moon-hlog/cmd/hlog@0.3.0` 安装的 CLI 也成功读取了 jHiccup 样例。[MoonBit 包管理文档](https://docs.moonbitlang.com/en/latest/toolchain/moon/package-manage-tour.html)

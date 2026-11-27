@@ -15,7 +15,7 @@
 
 - 选一条真实日志链路。首选 jHiccup 生成的 `.hlog`，复现采集到 MoonHlog 报告的过程，记录采集版本、参数、计量单位和可比的运行环境。用同一文件核对 Java 读取结果。以后再按实际需求扩展日志生产者。[jHiccup](https://github.com/giltene/jHiccup)
 - 给 GitHub Actions 提供一份可直接使用的工作流示例。用固定版本的基线文件，输出标签、回归窗口、P99 与样本数到 CI 摘要，同时保留 JSON 供自动化消费。三组案例分别验证通过、判定退化、证据不足。
-- 核对 Mooncakes 包版本后，准备注册表发布和空项目 `moon add` 验收。当前已验证的是 GitHub Release 可执行文件和本地归档导入，尚需从公共注册表安装后复跑。若继续接入 Molt，优先评估可追踪的 `.hlog` 导出接缝。Molt 已负责 HTTP 施压、采集以及固定阈值判断，MoonHlog 可以在其产物上做两次运行的比较。[MoonBit 包发布文档](https://docs.moonbitlang.com/en/latest/toolchain/moon/package-manage-tour.html#publish-your-module) · [Molt 现有功能](https://github.com/paveg/molt#features)
+- Mooncakes v0.3.0 已发布，独立模块通过 `moon add` 安装后的四后端测试及注册表 CLI 安装均已验证。若继续接入 Molt，优先评估可追踪的 `.hlog` 导出接缝。Molt 已负责 HTTP 施压、采集以及固定阈值判断，MoonHlog 可以在其产物上做两次运行的比较。[MoonBit 包发布文档](https://docs.moonbitlang.com/en/latest/toolchain/moon/package-manage-tour.html#publish-your-module) · [Molt 现有功能](https://github.com/paveg/molt#features)
 
 ## 三、优化窄窗口和大日志
 
@@ -29,4 +29,4 @@
 
 多文件分片合并需要统一对齐时间的基准，并确认输入分片互不重叠。收集到真实多 worker 日志后再定义兼容性和重复输入规则。静态 HTML 报告可基于稳定 JSON 做单文件导出。完整的 Web 平台、实时压测客户端、旧编码和浮点直方图支持需要下游场景来决定优先级。
 
-第一批实现已覆盖最低样本数、JSON 判定原因和 CLI 回归测试。外部日志复现和 CI 接入示例已写入 [接入指南](INTEGRATION.md)。计量单位声明、严格流式读取与选择性负载解码也已实现。窄窗口的三次对照见 [性能基准](STREAMING_BENCHMARK.md)。公共注册表安装仍待实际发布后验证。
+第一批实现已覆盖最低样本数、JSON 判定原因和 CLI 回归测试。外部日志复现和 CI 接入示例已写入 [接入指南](INTEGRATION.md)。计量单位声明、严格流式读取与选择性负载解码也已实现。窄窗口的三次对照见 [性能基准](STREAMING_BENCHMARK.md)。公共注册表安装已验收，详见接入指南。
